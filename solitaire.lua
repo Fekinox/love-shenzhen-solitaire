@@ -37,6 +37,8 @@ function solitaire.start_game()
     solitaire.offset = nil
     solitaire.stack_pos = nil
 
+    solitaire.automove = nil
+
     local deck = {}
     for c = 1, 3 do
         for n = 1, 9 do
@@ -349,6 +351,50 @@ function solitaire.undo_pickup()
     solitaire.old_column = nil
     solitaire.stack_pos = nil
     solitaire.offset = nil
+end
+
+function solitaire.check_automoves()
+    local top_cards = {}
+    for i = 1, 3 do
+        if solitaire.free_cells[i] ~= nil then
+            table.insert(top_cards, { 1, i })
+        end
+    end
+
+    for i, col in ipairs(solitaire.board) do
+        if next(col) ~= nil then
+            table.insert(top_cards, { 2, { i, #col } })
+        end
+    end
+
+    for _, cp in ipairs(top_cards) do
+        local cd = {}
+        if cp[1] == 1 then
+            cd = solitaire.free_cells[cp[2]]
+        else
+            cd = solitaire.board[cp[2][1]][cp[2][2]]
+        end
+
+        -- Can automove a card if
+        -- - It is a flower card, OR
+        -- - It is not a dragon card AND
+        -- - Destination is 1 less in value than this card AND
+        -- - No other cards can be placed on this card
+        -- ex. for a green 5, all red or blue 4s must be in the foundations
+        if cd[1] == 4 then return { 2, cp } end
+
+        if cd[2] ~= 0 and solitaire.foundations[cd[1]] == cd[2] - 1 then
+            local bad = false
+            for i = 1, 3 do
+                if i ~= cd[1] and solitaire.foundations[i] <= cd[2] - 2 then
+                    bad = true
+                end
+            end
+            if ! bad then
+                return { 1, cp }
+            end
+        end
+    end
 end
 
 return solitaire
