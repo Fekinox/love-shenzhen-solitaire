@@ -17,6 +17,9 @@ CARD_HEIGHT = 60
 STACK_HEIGHT = 20
 GAP_WIDTH = 10
 
+BUTTON_GAP = 5
+BUTTON_RADIUS = (CARD_HEIGHT - 2 * BUTTON_GAP) / 6
+
 function solitaire.start_game()
     solitaire.seed = math.floor(love.timer.getTime() * 1000000)
     solitaire.rng = love.math.newRandomGenerator()
@@ -101,7 +104,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                 if solitaire.free_cells[i] == nil then
                     local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (i - 1)) ^ 2 + (cdy) ^ 2
                     if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                        closest_space = { 1, i }
+                        closest_space = { 2, i }
                     end
                 end
             end
@@ -109,7 +112,14 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
             if cd[2] ~= 0 and solitaire.foundations[cd[1]] == cd[2] - 1 then
                 local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (cd[1] + 4)) ^ 2 + cdy ^ 2
                 if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                    closest_space = { 2, cd[1] }
+                    closest_space = { 3, cd[1] }
+                end
+            end
+
+            if cd[1] == 4 then
+                local dist = (cdx - ((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS * 2 + 20)) ^ 2 + cdy ^ 2
+                if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
+                    closest_space = { 4 }
                 end
             end
         end
@@ -121,19 +131,21 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                 dist = dist + (cdy - (CARD_HEIGHT + GAP_WIDTH + (STACK_HEIGHT) * (#col - 1))) ^ 2
             end
             if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                closest_space = { 3, i }
+                closest_space = { 1, i }
             end
         end
 
         if closest_space ~= nil then
             if closest_space[1] == 1 then
-                solitaire.free_cells[closest_space[2]] = solitaire.stack[1]
-            elseif closest_space[1] == 2 then
-                solitaire.foundations[closest_space[2]] = solitaire.foundations[closest_space[2]] + 1
-            else
                 solitaire.board[closest_space[2]] = tableext.concat({
                     solitaire.board[closest_space[2]], solitaire.stack
                 })
+            elseif closest_space[1] == 2 then
+                solitaire.free_cells[closest_space[2]] = solitaire.stack[1]
+            elseif closest_space[1] == 3 then
+                solitaire.foundations[closest_space[2]] = solitaire.foundations[closest_space[2]] + 1
+            else
+                solitaire.flower_cell = { 4, 0 }
             end
             solitaire.stack = nil
             solitaire.old_column = nil
@@ -195,6 +207,27 @@ function solitaire.draw()
         end
         love.graphics.pop()
     end
+
+    -- Dragon buttons
+    for i = 1, 3 do
+        love.graphics.push()
+        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS,
+            BUTTON_RADIUS + (BUTTON_RADIUS * 2 + BUTTON_GAP) * (i - 1))
+        love.graphics.setColor(COLORS[i])
+        love.graphics.circle("line", 0, 0, BUTTON_RADIUS)
+        love.graphics.pop()
+    end
+
+    -- Flower cell
+    love.graphics.push()
+    love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS * 2 + 20, 0)
+    if solitaire.flower_cell == nil then
+        love.graphics.setColor(0.5, 0.5, 0.5)
+        love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
+    else
+        solitaire.draw_card(0, 0, solitaire.flower_cell, false)
+    end
+    love.graphics.pop()
 
     -- Cards in hand
     if solitaire.stack ~= nil then
