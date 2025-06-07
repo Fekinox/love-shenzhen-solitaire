@@ -88,10 +88,10 @@ function solitaire.mousepressed(x, y, button, istouch, presses)
     if bc == nil then return end
 
     solitaire.pick_up_cards_from_board(bc[1], bc[2])
-    local loc = solitaire.card_position_on_board(bc[1], bc[2])
+    local locx, locy = solitaire.board_position(bc[1], bc[2])
     solitaire.offset = {
-        loc[1] - x,
-        loc[2] - y
+        locx - x,
+        locy - y
     }
     solitaire.stack_pos = { x, y }
 end
@@ -104,7 +104,8 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
             local cd = solitaire.stack[1]
             for i = 1, 3 do
                 if solitaire.free_cells[i] == nil then
-                    local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (i - 1)) ^ 2 + (cdy) ^ 2
+                    local sx, sy = solitaire.free_cell_position(i)
+                    local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                     if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
                         closest_space = { 2, i }
                     end
@@ -112,26 +113,29 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
             end
 
             if cd[2] ~= 0 and solitaire.foundations[cd[1]] == cd[2] - 1 then
-                local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (cd[1] + 4)) ^ 2 + cdy ^ 2
+                local sx, sy = solitaire.foundation_position(cd[1])
+                local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                 if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
                     closest_space = { 3, cd[1] }
                 end
             end
 
             if cd[1] == 4 then
-                local dist = (cdx - ((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS * 2 + 20)) ^ 2 + cdy ^ 2
+                local sx, sy = solitaire.flower_position()
+                local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                 if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
                     closest_space = { 4 }
                 end
             end
         end
         for i, col in ipairs(solitaire.board) do
-            local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (i - 1)) ^ 2
+            local sx, sy
             if next(col) == nil then
-                dist = dist + (cdy - (CARD_HEIGHT + GAP_WIDTH)) ^ 2
+                sx, sy = solitaire.board_position(i, 1)
             else
-                dist = dist + (cdy - (CARD_HEIGHT + GAP_WIDTH + (STACK_HEIGHT) * (#col - 1))) ^ 2
+                sx, sy = solitaire.board_position(i, #col)
             end
+            local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
             if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
                 closest_space = { 1, i }
             end
@@ -164,72 +168,42 @@ end
 
 function solitaire.draw()
     -- Board
-    love.graphics.push()
-    love.graphics.translate(0, CARD_HEIGHT + GAP_WIDTH)
     for i, col in ipairs(solitaire.board) do
-        love.graphics.push()
-        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * (i - 1), 0)
         for j, cd in ipairs(col) do
-            love.graphics.push()
-            love.graphics.translate(0, STACK_HEIGHT * (j - 1))
+            local cx, cy = solitaire.board_position(i, j)
             local h = solitaire.hover ~= nil and i == solitaire.hover[1] and j >= solitaire.hover[2]
-            solitaire.draw_card(0, 0, cd, h)
-            love.graphics.pop()
+            solitaire.draw_card(cx, cy, cd, h)
         end
-        love.graphics.pop()
     end
-    love.graphics.pop()
 
     -- Free cells
-    love.graphics.push()
     for i = 1, 3 do
-        love.graphics.push()
-        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * (i - 1), 0)
+        local fx, fy = solitaire.free_cell_position(i)
         local cl = solitaire.free_cells[i]
-        if cl == nil then
-            love.graphics.setColor(0.5, 0.5, 0.5)
-            love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
-        else
-            solitaire.draw_card(0, 0, cl, false)
-        end
-        love.graphics.pop()
+        solitaire.draw_card(fx, fy, cl, false)
     end
-    love.graphics.pop()
 
     -- Foundations
     for i = 1, 3 do
-        love.graphics.push()
-        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * (i + 4), 0)
+        local fx, fy = solitaire.foundation_position(i)
         local cl = solitaire.foundations[i]
         if cl == 0 then
-            love.graphics.setColor(0.5, 0.5, 0.5)
-            love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
+            solitaire.draw_card(fx, fy, nil, false)
         else
-            solitaire.draw_card(0, 0, { i, cl }, false)
+            solitaire.draw_card(fx, fy, { i, cl }, false)
         end
-        love.graphics.pop()
     end
 
     -- Dragon buttons
     for i = 1, 3 do
-        love.graphics.push()
-        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS,
-            BUTTON_RADIUS + (BUTTON_RADIUS * 2 + BUTTON_GAP) * (i - 1))
+        local bx, by = solitaire.dragon_button_position(i)
         love.graphics.setColor(COLORS[i])
-        love.graphics.circle("line", 0, 0, BUTTON_RADIUS)
-        love.graphics.pop()
+        love.graphics.circle("line", bx, by, BUTTON_RADIUS)
     end
 
     -- Flower cell
-    love.graphics.push()
-    love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS * 2 + 20, 0)
-    if solitaire.flower_cell == nil then
-        love.graphics.setColor(0.5, 0.5, 0.5)
-        love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
-    else
-        solitaire.draw_card(0, 0, solitaire.flower_cell, false)
-    end
-    love.graphics.pop()
+    local fx, fy = solitaire.flower_position()
+    solitaire.draw_card(fx, fy, solitaire.flower_cell, false)
 
     -- Cards in hand
     if solitaire.stack ~= nil then
@@ -249,6 +223,11 @@ function solitaire.draw()
 end
 
 function solitaire.draw_card(x, y, cd, h)
+    if cd == nil then
+        love.graphics.setColor(0.5, 0.5, 0.5)
+        love.graphics.rectangle("line", x, y, CARD_WIDTH, CARD_HEIGHT)
+        return
+    end
     if h then
         love.graphics.setColor(1, 1, 1)
     else
@@ -257,7 +236,7 @@ function solitaire.draw_card(x, y, cd, h)
     love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT)
     love.graphics.setColor(COLORS[cd[1]])
     love.graphics.rectangle("line", x, y, CARD_WIDTH, CARD_HEIGHT)
-    love.graphics.print(cd[2])
+    love.graphics.print(cd[2], x, y)
 end
 
 function solitaire.legal_move(stack, column)
@@ -309,10 +288,10 @@ end
 
 function solitaire.check_board_collision(x, y)
     for i, col in ipairs(solitaire.board) do
-        for j, cd in ipairs(col) do
+        for j = 1, #col do
+            local px, py = solitaire.board_position(i, j)
             local a = {
-                (CARD_WIDTH + GAP_WIDTH) * (i - 1),
-                CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT * (j - 1),
+                px, py,
                 CARD_WIDTH,
                 STACK_HEIGHT
             }
@@ -327,11 +306,27 @@ function solitaire.check_board_collision(x, y)
     return nil
 end
 
-function solitaire.card_position_on_board(col, row)
-    return {
+function solitaire.board_position(col, row)
+    return
         (CARD_WIDTH + GAP_WIDTH) * (col - 1),
         CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT * (row - 1)
-    }
+end
+
+function solitaire.free_cell_position(i)
+    return (CARD_WIDTH + GAP_WIDTH) * (i - 1), 0
+end
+
+function solitaire.foundation_position(i)
+    return (CARD_WIDTH + GAP_WIDTH) * (i + 4), 0
+end
+
+function solitaire.flower_position()
+    return (CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS * 2 + 20, 0
+end
+
+function solitaire.dragon_button_position(i)
+    return (CARD_WIDTH + GAP_WIDTH) * 3 + BUTTON_RADIUS,
+        BUTTON_RADIUS + (BUTTON_RADIUS * 2 + BUTTON_GAP) * (i - 1)
 end
 
 function solitaire.pick_up_cards_from_board(col, row)
