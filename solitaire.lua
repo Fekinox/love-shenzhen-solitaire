@@ -385,7 +385,7 @@ function solitaire.check_automoves()
                     bad = true
                 end
             end
-            if ! bad then
+            if not bad then
                 return { 1, cp }
             end
         end
