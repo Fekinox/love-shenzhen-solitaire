@@ -63,7 +63,7 @@ end
 
 function solitaire.mousemoved(x, y, dx, dy, istouch)
     if solitaire.stack ~= nil then
-        solitaire.stack_pos = {x, y}
+        solitaire.stack_pos = { x, y }
         return
     end
     local bc = solitaire.check_board_collision(x, y)
@@ -81,18 +81,67 @@ end
 function solitaire.mousepressed(x, y, button, istouch, presses)
     local bc = solitaire.check_board_collision(x, y)
     if bc == nil then return end
+
     solitaire.pick_up_cards_from_board(bc[1], bc[2])
-    loc = solitaire.card_position_on_board(bc[1], bc[2])
+    local loc = solitaire.card_position_on_board(bc[1], bc[2])
     solitaire.offset = {
-        loc[1]-x,
-        loc[2]-y
+        loc[1] - x,
+        loc[2] - y
     }
-    solitaire.stack_pos = {x, y}
+    solitaire.stack_pos = { x, y }
 end
 
 function solitaire.mousereleased(x, y, button, istouch, presses)
     if solitaire.stack ~= nil then
-        solitaire.undo_pickup()
+        local cdx, cdy = x + solitaire.offset[1], y + solitaire.offset[2]
+        local closest_space = nil
+        if #solitaire.stack == 1 then
+            local cd = solitaire.stack[1]
+            for i = 1, 3 do
+                if solitaire.free_cells[i] == nil then
+                    local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (i - 1)) ^ 2 + (cdy) ^ 2
+                    if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
+                        closest_space = { 1, i }
+                    end
+                end
+            end
+
+            if cd[2] ~= 0 and solitaire.foundations[cd[1]] == cd[2] - 1 then
+                local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (cd[1] + 4)) ^ 2 + cdy ^ 2
+                if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
+                    closest_space = { 2, cd[1] }
+                end
+            end
+        end
+        for i, col in ipairs(solitaire.board) do
+            local dist = (cdx - (CARD_WIDTH + GAP_WIDTH) * (i - 1)) ^ 2
+            if next(col) == nil then
+                dist = dist + (cdy - (CARD_HEIGHT + GAP_WIDTH)) ^ 2
+            else
+                dist = dist + (cdy - (CARD_HEIGHT + GAP_WIDTH + (STACK_HEIGHT) * (#col - 1))) ^ 2
+            end
+            if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
+                closest_space = { 3, i }
+            end
+        end
+
+        if closest_space ~= nil then
+            if closest_space[1] == 1 then
+                solitaire.free_cells[closest_space[2]] = solitaire.stack[1]
+            elseif closest_space[1] == 2 then
+                solitaire.foundations[closest_space[2]] = solitaire.foundations[closest_space[2]] + 1
+            else
+                solitaire.board[closest_space[2]] = tableext.concat({
+                    solitaire.board[closest_space[2]], solitaire.stack
+                })
+            end
+            solitaire.stack = nil
+            solitaire.old_column = nil
+            solitaire.stack_pos = nil
+            solitaire.offset = nil
+        else
+            solitaire.undo_pickup()
+        end
     end
 end
 
@@ -100,6 +149,7 @@ function solitaire.update()
 end
 
 function solitaire.draw()
+    -- Board
     love.graphics.push()
     love.graphics.translate(0, CARD_HEIGHT + GAP_WIDTH)
     for i, col in ipairs(solitaire.board) do
@@ -116,6 +166,37 @@ function solitaire.draw()
     end
     love.graphics.pop()
 
+    -- Free cells
+    love.graphics.push()
+    for i = 1, 3 do
+        love.graphics.push()
+        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * (i - 1), 0)
+        local cl = solitaire.free_cells[i]
+        if cl == nil then
+            love.graphics.setColor(0.5, 0.5, 0.5)
+            love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
+        else
+            solitaire.draw_card(0, 0, cl, false)
+        end
+        love.graphics.pop()
+    end
+    love.graphics.pop()
+
+    -- Foundations
+    for i = 1, 3 do
+        love.graphics.push()
+        love.graphics.translate((CARD_WIDTH + GAP_WIDTH) * (i + 4), 0)
+        local cl = solitaire.foundations[i]
+        if cl == 0 then
+            love.graphics.setColor(0.5, 0.5, 0.5)
+            love.graphics.rectangle("line", 0, 0, CARD_WIDTH, CARD_HEIGHT)
+        else
+            solitaire.draw_card(0, 0, { i, cl }, false)
+        end
+        love.graphics.pop()
+    end
+
+    -- Cards in hand
     if solitaire.stack ~= nil then
         love.graphics.push()
         love.graphics.translate(
@@ -135,7 +216,7 @@ end
 function solitaire.draw_card(x, y, cd, h)
     if h then
         love.graphics.setColor(1, 1, 1)
-    else 
+    else
         love.graphics.setColor(0, 0, 0)
     end
     love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT)
@@ -183,10 +264,10 @@ function solitaire.legal_stack(col, row)
         -- - Has the same suit
         -- - Does not have the value of this card minus one
         -- it isn't part of the stack
-        if cl[row+1][2] == 0 or cl[row+1][1] == cl[row][1] or cl[row+1][2] ~= cl[row][2] - 1 then
+        if cl[row + 1][2] == 0 or cl[row + 1][1] == cl[row][1] or cl[row + 1][2] ~= cl[row][2] - 1 then
             return false
         end
-        row = row+1
+        row = row + 1
     end
     return true
 end
@@ -195,16 +276,16 @@ function solitaire.check_board_collision(x, y)
     for i, col in ipairs(solitaire.board) do
         for j, cd in ipairs(col) do
             local a = {
-                (CARD_WIDTH + GAP_WIDTH)*(i-1),
-                CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT*(j-1),
+                (CARD_WIDTH + GAP_WIDTH) * (i - 1),
+                CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT * (j - 1),
                 CARD_WIDTH,
                 STACK_HEIGHT
             }
             if j == #col then
                 a[4] = CARD_HEIGHT
             end
-            if aabb.contains(a, {x, y}) then
-                return {i, j}
+            if aabb.contains(a, { x, y }) then
+                return { i, j }
             end
         end
     end
@@ -213,14 +294,14 @@ end
 
 function solitaire.card_position_on_board(col, row)
     return {
-        (CARD_WIDTH + GAP_WIDTH)*(col-1),
-        CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT*(row-1)
+        (CARD_WIDTH + GAP_WIDTH) * (col - 1),
+        CARD_HEIGHT + GAP_WIDTH + STACK_HEIGHT * (row - 1)
     }
 end
 
 function solitaire.pick_up_cards_from_board(col, row)
     local new_stack = tableext.unpack(solitaire.board[col], row)
-    solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row-1)
+    solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row - 1)
 
     solitaire.stack = new_stack
     solitaire.old_column = col
