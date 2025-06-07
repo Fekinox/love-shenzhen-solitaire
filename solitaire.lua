@@ -1,3 +1,4 @@
+local smoothstep = require("smoothstep")
 local tableext = require("tableext")
 local aabb = require("aabb")
 local solitaire = {}
@@ -37,7 +38,15 @@ function solitaire.start_game()
     solitaire.offset = nil
     solitaire.stack_pos = nil
 
-    solitaire.automove = nil
+    solitaire.animation = {
+        startX = 0,
+        startY = 0,
+        endX = 400,
+        endY = 400,
+        t = 0,
+        duration = 1,
+        card = { 1, 1 }
+    }
 
     local deck = {}
     for c = 1, 3 do
@@ -163,7 +172,8 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
     end
 end
 
-function solitaire.update()
+function solitaire.update(dt)
+    solitaire.animation.t = solitaire.animation.t + dt
 end
 
 function solitaire.draw()
@@ -220,6 +230,8 @@ function solitaire.draw()
         end
         love.graphics.pop()
     end
+
+    solitaire.draw_card_animation(solitaire.animation)
 end
 
 function solitaire.draw_card(x, y, cd, h)
@@ -390,6 +402,12 @@ function solitaire.check_automoves()
             end
         end
     end
+end
+
+function solitaire.draw_card_animation(anim)
+    local t = smoothstep(anim.t / anim.duration)
+    local xx, yy = anim.startX * (1 - t) + anim.endX * t, anim.startY * (1 - t) + anim.endY * t
+    solitaire.draw_card(xx, yy, anim.card, false)
 end
 
 return solitaire

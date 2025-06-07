@@ -20,8 +20,8 @@ function love.mousereleased(x, y, button, istouch, presses)
     solitaire.mousereleased(x, y, button, istouch, presses)
 end
 
-function love.update()
-    solitaire.update()
+function love.update(dt)
+    solitaire.update(dt)
 end
 
 function love.draw()
