@@ -70,7 +70,7 @@ function solitaire.start_game()
     solitaire.after_move()
 end
 
-function solitaire.keyreleased(key, scancode)
+function solitaire.keyreleased(key, _scancode)
     if key == "r" then
         solitaire.start_game()
     end
@@ -107,7 +107,7 @@ end
 function solitaire.mousepressed(x, y, button, istouch, presses)
     if solitaire.animation ~= nil then return end
     local bc = solitaire.card_position_at_location(x, y)
-    if bc ~= nil then
+    if bc ~= nil and (bc[1] == LOC_FREE_CELL or solitaire.legal_stack(bc[2][1], bc[2][2])) then
         solitaire.pick_up_cards_from_board(bc)
         local locx, locy = solitaire.card_position(bc)
         solitaire.offset = {
@@ -158,7 +158,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                 sx, sy = solitaire.board_position(i, #col)
             end
             local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
-            if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
+            if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) and solitaire.legal_move(solitaire.stack, i) then
                 closest_space = { LOC_BOARD, i }
             end
         end
@@ -193,7 +193,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
         if d < BUTTON_RADIUS and solitaire.movable_dragons[i] ~= nil then
             local anim = {
                 t = 0,
-                duration = 0.5,
+                duration = 0.3,
                 cards = {}
             }
             for _, dg in ipairs(solitaire.dragons[i]) do
@@ -341,8 +341,10 @@ function solitaire.legal_move(stack, column)
     local bottomCardOfStack = stack[1]
     -- Always illegal to move stack of cards onto dragon or flower
     if topCardOfCol[2] == 0 or topCardOfCol[1] == 4 then return false end
+    -- Always illegal to move a dragon or flower onto any card
+    if bottomCardOfStack[2] == 0 or bottomCardOfStack[1] == 4 then return false end
     -- Number cards must be stacked in descending order and alternating suits
-    return bottomCardOfStack[1] ~= topCardOfCol[1] and bottomCardOfStack[1] == topCardOfCol[1] - 1
+    return bottomCardOfStack[1] ~= topCardOfCol[1] and bottomCardOfStack[2] == topCardOfCol[2] - 1
 end
 
 -- Check if the current column can legally be picked up as a stack.
@@ -528,7 +530,7 @@ function solitaire.after_move()
     if automove ~= nil then
         local anim = {
             t = 0,
-            duration = 0.5,
+            duration = 0.3,
         }
         local card = {}
         card.startX, card.startY = solitaire.card_position(automove)
@@ -605,7 +607,7 @@ end
 
 function solitaire.draw_card_animation(anim)
     local t = smoothstep(anim.t / anim.duration)
-    for i, cd in ipairs(anim.cards) do
+    for _, cd in ipairs(anim.cards) do
         local xx, yy = cd.startX * (1 - t) + cd.endX * t, cd.startY * (1 - t) + cd.endY * t
         solitaire.draw_card(xx, yy, cd.card, false)
     end
