@@ -105,10 +105,9 @@ function solitaire.mousemoved(x, y, dx, dy, istouch)
 end
 
 function solitaire.mousepressed(x, y, button, istouch, presses)
-    if solitaire.animation == nil then
-        local bc = solitaire.card_position_at_location(x, y)
-        if bc == nil then return end
-
+    if solitaire.animation ~= nil then return end
+    local bc = solitaire.card_position_at_location(x, y)
+    if bc ~= nil then
         solitaire.pick_up_cards_from_board(bc)
         local locx, locy = solitaire.card_position(bc)
         solitaire.offset = {
@@ -185,6 +184,39 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
         else
             solitaire.undo_pickup()
         end
+        return
+    end
+
+    for i = 1, 3 do
+        local bx, by = solitaire.dragon_button_position(i)
+        local d = math.sqrt((x - bx) ^ 2 + (y - by) ^ 2)
+        if d < BUTTON_RADIUS and solitaire.movable_dragons[i] ~= nil then
+            local anim = {
+                t = 0,
+                duration = 0.5,
+                cards = {}
+            }
+            for _, dg in ipairs(solitaire.dragons[i]) do
+                local card = {}
+                card.card = { -1 }
+                card.startX, card.startY = solitaire.card_position(dg)
+                card.endX, card.endY = solitaire.card_position({ LOC_FREE_CELL, solitaire.movable_dragons[i] })
+                if dg[1] == LOC_BOARD then
+                    table.remove(solitaire.board[dg[2][1]], dg[2][2])
+                else
+                    solitaire.free_cells[dg[2]] = nil
+                end
+                table.insert(anim.cards, card)
+            end
+            anim.end_hook = function()
+                solitaire.free_cells[solitaire.movable_dragons[i]] = { -1 }
+                solitaire.animation = nil
+                solitaire.after_move()
+            end
+
+            solitaire.animation = anim
+            return
+        end
     end
 end
 
@@ -192,13 +224,7 @@ function solitaire.update(dt)
     if solitaire.animation ~= nil then
         solitaire.animation.t = solitaire.animation.t + dt
         if solitaire.animation.t > solitaire.animation.duration then
-            if solitaire.animation.card[1] == 4 then
-                solitaire.flower_cell = solitaire.animation.card
-            else
-                solitaire.foundations[solitaire.animation.card[1]] = solitaire.animation.card[2]
-            end
-            solitaire.animation = nil
-            solitaire.after_move()
+            solitaire.animation.end_hook()
         end
     end
 end
@@ -287,6 +313,11 @@ function solitaire.draw_card(x, y, cd, h)
     if cd == nil then
         love.graphics.setColor(0.5, 0.5, 0.5)
         love.graphics.rectangle("line", x, y, CARD_WIDTH, CARD_HEIGHT)
+        return
+    end
+    if cd[1] == -1 then
+        love.graphics.setColor(0.5, 0.5, 0.5)
+        love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT)
         return
     end
     if h then
@@ -448,7 +479,7 @@ end
 function solitaire.check_automoves()
     local top_cards = {}
     for i = 1, 3 do
-        if solitaire.free_cells[i] ~= nil then
+        if solitaire.free_cells[i] ~= nil and solitaire.free_cells[i][1] ~= -1 then
             table.insert(top_cards, { LOC_FREE_CELL, i })
         end
     end
@@ -499,19 +530,32 @@ function solitaire.after_move()
             t = 0,
             duration = 0.5,
         }
-        anim.startX, anim.startY = solitaire.card_position(automove)
+        local card = {}
+        card.startX, card.startY = solitaire.card_position(automove)
         if automove[1] == LOC_FREE_CELL then
-            anim.card = solitaire.free_cells[automove[2]]
+            card.card = solitaire.free_cells[automove[2]]
             solitaire.free_cells[automove[2]] = nil
         else
-            anim.card = solitaire.board[automove[2][1]][automove[2][2]]
+            card.card = solitaire.board[automove[2][1]][automove[2][2]]
             table.remove(solitaire.board[automove[2][1]], automove[2][2])
         end
-        if anim.card[1] == 4 then
-            anim.endX, anim.endY = solitaire.flower_position()
+        if card.card[1] == 4 then
+            card.endX, card.endY = solitaire.flower_position()
         else
-            anim.endX, anim.endY = solitaire.foundation_position(anim.card[1])
+            card.endX, card.endY = solitaire.foundation_position(card.card[1])
         end
+        anim.end_hook = function()
+            if card.card[1] == 4 then
+                solitaire.flower_cell = card.card
+            else
+                solitaire.foundations[card.card[1]] = card.card[2]
+            end
+            solitaire.animation = nil
+            solitaire.after_move()
+        end
+
+        anim.cards = { card }
+
         solitaire.animation = anim
 
         return
@@ -524,11 +568,11 @@ function solitaire.after_move()
     local open_free_cell = nil
 
     for i = 1, 3 do
-        if solitaire.free_cells[i] ~= nil then
+        if solitaire.free_cells[i] ~= nil and solitaire.free_cells[i][1] ~= -1 then
             if solitaire.free_cells[i][2] == 0 then
                 table.insert(solitaire.dragons[solitaire.free_cells[i][1]], { LOC_FREE_CELL, i })
             end
-        elseif open_free_cell == nil then
+        elseif solitaire.free_cells[i] == nil and open_free_cell == nil then
             open_free_cell = i
         end
     end
@@ -561,8 +605,10 @@ end
 
 function solitaire.draw_card_animation(anim)
     local t = smoothstep(anim.t / anim.duration)
-    local xx, yy = anim.startX * (1 - t) + anim.endX * t, anim.startY * (1 - t) + anim.endY * t
-    solitaire.draw_card(xx, yy, anim.card, false)
+    for i, cd in ipairs(anim.cards) do
+        local xx, yy = cd.startX * (1 - t) + cd.endX * t, cd.startY * (1 - t) + cd.endY * t
+        solitaire.draw_card(xx, yy, cd.card, false)
+    end
 end
 
 return solitaire
