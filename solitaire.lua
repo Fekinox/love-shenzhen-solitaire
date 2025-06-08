@@ -40,7 +40,7 @@ function solitaire.start_game()
     solitaire.dragon_hover = nil
 
     solitaire.stack = nil
-    solitaire.old_column = nil
+    solitaire.old_pos = nil
     solitaire.offset = nil
     solitaire.stack_pos = nil
 
@@ -82,7 +82,7 @@ function solitaire.mousemoved(x, y, dx, dy, istouch)
         return
     end
 
-    local bc = solitaire.cards_at_location(x, y)
+    local bc = solitaire.card_position_at_location(x, y)
     if bc == nil then
         solitaire.hover = nil
     else
@@ -106,7 +106,7 @@ end
 
 function solitaire.mousepressed(x, y, button, istouch, presses)
     if solitaire.animation == nil then
-        local bc = solitaire.cards_at_location(x, y)
+        local bc = solitaire.card_position_at_location(x, y)
         if bc == nil then return end
 
         solitaire.pick_up_cards_from_board(bc)
@@ -347,7 +347,8 @@ function solitaire.legal_stack(col, row)
     return true
 end
 
-function solitaire.cards_at_location(x, y)
+function solitaire.card_position_at_location(x, y)
+    -- Board
     for i, col in ipairs(solitaire.board) do
         for j = 1, #col do
             local px, py = solitaire.board_position(i, j)
@@ -362,6 +363,18 @@ function solitaire.cards_at_location(x, y)
             if aabb.contains(a, { x, y }) then
                 return { LOC_BOARD, { i, j } }
             end
+        end
+    end
+
+    -- Free cells
+    for i = 1, 3 do
+        local px, py = solitaire.free_cell_position(i)
+        local a = {
+            px, py,
+            CARD_WIDTH, CARD_HEIGHT
+        }
+        if solitaire.free_cells[i] ~= nil and aabb.contains(a, { x, y }) then
+            return { LOC_FREE_CELL, i }
         end
     end
     return nil
@@ -409,17 +422,25 @@ function solitaire.pick_up_cards_from_board(pos)
         solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row - 1)
 
         solitaire.stack = new_stack
-        solitaire.old_column = col
+        solitaire.old_pos = { LOC_BOARD, col }
+    elseif pos[1] == LOC_FREE_CELL then
+        solitaire.stack = { solitaire.free_cells[pos[2]] }
+        solitaire.free_cells[pos[2]] = nil
+        solitaire.old_pos = { LOC_FREE_CELL, pos[2] }
     end
 end
 
 function solitaire.undo_pickup()
-    solitaire.board[solitaire.old_column] = tableext.concat({
-        solitaire.board[solitaire.old_column], solitaire.stack
-    })
+    if solitaire.old_pos[1] == LOC_BOARD then
+        solitaire.board[solitaire.old_pos[2]] = tableext.concat({
+            solitaire.board[solitaire.old_pos[2]], solitaire.stack
+        })
+    elseif solitaire.old_pos[1] == LOC_FREE_CELL then
+        solitaire.free_cells[solitaire.old_pos[2]] = solitaire.stack[1]
+    end
 
     solitaire.stack = nil
-    solitaire.old_column = nil
+    solitaire.old_pos = nil
     solitaire.stack_pos = nil
     solitaire.offset = nil
 end
@@ -524,7 +545,7 @@ function solitaire.after_move()
     for i = 1, 3 do
         -- All 4 dragons have to be exposed
         if #solitaire.dragons[i] == 4 then
-            for j, dgp in ipairs(solitaire.dragons[i]) do
+            for _, dgp in ipairs(solitaire.dragons[i]) do
                 -- If one of the dragons is in a free cell, move all dragons to that free cell
                 if dgp[1] == LOC_FREE_CELL and solitaire.movable_dragons[i] == nil then
                     solitaire.movable_dragons[i] = dgp[2]
