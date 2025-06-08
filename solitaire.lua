@@ -21,6 +21,11 @@ GAP_WIDTH = 10
 BUTTON_GAP = 5
 BUTTON_RADIUS = (CARD_HEIGHT - 2 * BUTTON_GAP) / 6
 
+LOC_BOARD = 1
+LOC_FREE_CELL = 2
+LOC_FOUNDATION = 3
+LOC_FLOWER_CELL = 4
+
 function solitaire.start_game()
     solitaire.seed = math.floor(love.timer.getTime() * 1000000)
     solitaire.rng = love.math.newRandomGenerator()
@@ -37,16 +42,6 @@ function solitaire.start_game()
     solitaire.old_column = nil
     solitaire.offset = nil
     solitaire.stack_pos = nil
-
-    solitaire.animation = {
-        startX = 0,
-        startY = 0,
-        endX = 400,
-        endY = 400,
-        t = 0,
-        duration = 1,
-        card = { 1, 1 }
-    }
 
     local deck = {}
     for c = 1, 3 do
@@ -67,6 +62,8 @@ function solitaire.start_game()
     for i, c in ipairs(deck) do
         table.insert(solitaire.board[(i - 1) % 8 + 1], c)
     end
+
+    solitaire.after_move()
 end
 
 function solitaire.keyreleased(key, scancode)
@@ -80,7 +77,7 @@ function solitaire.mousemoved(x, y, dx, dy, istouch)
         solitaire.stack_pos = { x, y }
         return
     end
-    local bc = solitaire.check_board_collision(x, y)
+    local bc = solitaire.check_click(x, y)
     if bc == nil then
         solitaire.hover = nil
         return
@@ -93,16 +90,18 @@ function solitaire.mousemoved(x, y, dx, dy, istouch)
 end
 
 function solitaire.mousepressed(x, y, button, istouch, presses)
-    local bc = solitaire.check_board_collision(x, y)
-    if bc == nil then return end
+    if solitaire.animation == nil then
+        local bc = solitaire.check_click(x, y)
+        if bc == nil then return end
 
-    solitaire.pick_up_cards_from_board(bc[1], bc[2])
-    local locx, locy = solitaire.board_position(bc[1], bc[2])
-    solitaire.offset = {
-        locx - x,
-        locy - y
-    }
-    solitaire.stack_pos = { x, y }
+        solitaire.pick_up_cards_from_board(bc[1], bc[2])
+        local locx, locy = solitaire.board_position(bc[1], bc[2])
+        solitaire.offset = {
+            locx - x,
+            locy - y
+        }
+        solitaire.stack_pos = { x, y }
+    end
 end
 
 function solitaire.mousereleased(x, y, button, istouch, presses)
@@ -116,7 +115,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                     local sx, sy = solitaire.free_cell_position(i)
                     local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                     if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                        closest_space = { 2, i }
+                        closest_space = { LOC_FREE_CELL, i }
                     end
                 end
             end
@@ -125,7 +124,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                 local sx, sy = solitaire.foundation_position(cd[1])
                 local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                 if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                    closest_space = { 3, cd[1] }
+                    closest_space = { LOC_FOUNDATION, cd[1] }
                 end
             end
 
@@ -133,7 +132,7 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
                 local sx, sy = solitaire.flower_position()
                 local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
                 if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                    closest_space = { 4 }
+                    closest_space = { LOC_FLOWER_CELL }
                 end
             end
         end
@@ -146,26 +145,28 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
             end
             local dist = (cdx - sx) ^ 2 + (cdy - sy) ^ 2
             if dist < 30 ^ 2 and (closest_space == nil or closest_space[2] > dist) then
-                closest_space = { 1, i }
+                closest_space = { LOC_BOARD, i }
             end
         end
 
         if closest_space ~= nil then
-            if closest_space[1] == 1 then
+            if closest_space[1] == LOC_BOARD then
                 solitaire.board[closest_space[2]] = tableext.concat({
                     solitaire.board[closest_space[2]], solitaire.stack
                 })
-            elseif closest_space[1] == 2 then
+            elseif closest_space[1] == LOC_FREE_CELL then
                 solitaire.free_cells[closest_space[2]] = solitaire.stack[1]
-            elseif closest_space[1] == 3 then
+            elseif closest_space[1] == LOC_FOUNDATION then
                 solitaire.foundations[closest_space[2]] = solitaire.foundations[closest_space[2]] + 1
             else
-                solitaire.flower_cell = { 4, 0 }
+                solitaire.flower_cell = { LOC_FLOWER_CELL, 0 }
             end
+
             solitaire.stack = nil
             solitaire.old_column = nil
             solitaire.stack_pos = nil
             solitaire.offset = nil
+            solitaire.after_move()
         else
             solitaire.undo_pickup()
         end
@@ -173,7 +174,18 @@ function solitaire.mousereleased(x, y, button, istouch, presses)
 end
 
 function solitaire.update(dt)
-    solitaire.animation.t = solitaire.animation.t + dt
+    if solitaire.animation ~= nil then
+        solitaire.animation.t = solitaire.animation.t + dt
+        if solitaire.animation.t > solitaire.animation.duration then
+            if solitaire.animation.card[1] == 4 then
+                solitaire.flower_cell = solitaire.animation.card
+            else
+                solitaire.foundations[solitaire.animation.card[1]] = solitaire.animation.card[2]
+            end
+            solitaire.animation = nil
+            solitaire.after_move()
+        end
+    end
 end
 
 function solitaire.draw()
@@ -231,7 +243,9 @@ function solitaire.draw()
         love.graphics.pop()
     end
 
-    solitaire.draw_card_animation(solitaire.animation)
+    if solitaire.animation ~= nil then
+        solitaire.draw_card_animation(solitaire.animation)
+    end
 end
 
 function solitaire.draw_card(x, y, cd, h)
@@ -298,7 +312,7 @@ function solitaire.legal_stack(col, row)
     return true
 end
 
-function solitaire.check_board_collision(x, y)
+function solitaire.check_click(x, y)
     for i, col in ipairs(solitaire.board) do
         for j = 1, #col do
             local px, py = solitaire.board_position(i, j)
@@ -341,6 +355,18 @@ function solitaire.dragon_button_position(i)
         BUTTON_RADIUS + (BUTTON_RADIUS * 2 + BUTTON_GAP) * (i - 1)
 end
 
+function solitaire.card_position(p)
+    if p[1] == LOC_FREE_CELL then
+        return solitaire.free_cell_position(p[2])
+    elseif p[1] == LOC_FOUNDATION then
+        return solitaire.foundation_position(p[2])
+    elseif p[1] == LOC_FLOWER_CELL then
+        return solitaire.flower_position()
+    else
+        return solitaire.board_position(p[2][1], p[2][2])
+    end
+end
+
 function solitaire.pick_up_cards_from_board(col, row)
     local new_stack = tableext.unpack(solitaire.board[col], row)
     solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row - 1)
@@ -364,19 +390,19 @@ function solitaire.check_automoves()
     local top_cards = {}
     for i = 1, 3 do
         if solitaire.free_cells[i] ~= nil then
-            table.insert(top_cards, { 1, i })
+            table.insert(top_cards, { LOC_FREE_CELL, i })
         end
     end
 
     for i, col in ipairs(solitaire.board) do
         if next(col) ~= nil then
-            table.insert(top_cards, { 2, { i, #col } })
+            table.insert(top_cards, { LOC_BOARD, { i, #col } })
         end
     end
 
     for _, cp in ipairs(top_cards) do
         local cd = {}
-        if cp[1] == 1 then
+        if cp[1] == LOC_FREE_CELL then
             cd = solitaire.free_cells[cp[2]]
         else
             cd = solitaire.board[cp[2][1]][cp[2][2]]
@@ -388,9 +414,12 @@ function solitaire.check_automoves()
         -- - Destination is 1 less in value than this card AND
         -- - No other cards can be placed on this card
         -- ex. for a green 5, all red or blue 4s must be in the foundations
-        if cd[1] == 4 then return { 2, cp } end
+        if cd[1] == 4 then return cp end
 
         if cd[2] ~= 0 and solitaire.foundations[cd[1]] == cd[2] - 1 then
+            -- 2 card does not need to worry about any cards being placed on it,
+            -- as 1 cards are immediately played to foundations
+            if cd[2] == 2 then return cp end
             local bad = false
             for i = 1, 3 do
                 if i ~= cd[1] and solitaire.foundations[i] <= cd[2] - 2 then
@@ -398,9 +427,33 @@ function solitaire.check_automoves()
                 end
             end
             if not bad then
-                return { 1, cp }
+                return cp
             end
         end
+    end
+end
+
+function solitaire.after_move()
+    local automove = solitaire.check_automoves()
+    if automove ~= nil then
+        local anim = {
+            t = 0,
+            duration = 0.5,
+        }
+        anim.startX, anim.startY = solitaire.card_position(automove)
+        if automove[1] == LOC_FREE_CELL then
+            anim.card = solitaire.free_cells[automove[2]]
+            solitaire.free_cells[automove[2]] = nil
+        else
+            anim.card = solitaire.board[automove[2][1]][automove[2][2]]
+            table.remove(solitaire.board[automove[2][1]], automove[2][2])
+        end
+        if anim.card[1] == 4 then
+            anim.endX, anim.endY = solitaire.flower_position()
+        else
+            anim.endX, anim.endY = solitaire.foundation_position(anim.card[1])
+        end
+        solitaire.animation = anim
     end
 end
 
