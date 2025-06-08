@@ -37,11 +37,15 @@ function solitaire.start_game()
     solitaire.board = { {}, {}, {}, {}, {}, {}, {}, {} }
 
     solitaire.hover = nil
+    solitaire.dragon_hover = nil
 
     solitaire.stack = nil
     solitaire.old_column = nil
     solitaire.offset = nil
     solitaire.stack_pos = nil
+
+    solitaire.dragons = { {}, {}, {} }
+    solitaire.movable_dragons = { nil, nil, nil }
 
     local deck = {}
     for c = 1, 3 do
@@ -77,25 +81,36 @@ function solitaire.mousemoved(x, y, dx, dy, istouch)
         solitaire.stack_pos = { x, y }
         return
     end
-    local bc = solitaire.check_click(x, y)
+
+    local bc = solitaire.cards_at_location(x, y)
     if bc == nil then
         solitaire.hover = nil
-        return
-    end
-    if solitaire.legal_stack(bc[1], bc[2]) then
-        solitaire.hover = bc
     else
-        solitaire.hover = nil
+        if bc[1] == LOC_FREE_CELL or solitaire.legal_stack(bc[2][1], bc[2][2]) then
+            solitaire.hover = bc
+        else
+            solitaire.hover = nil
+        end
+    end
+
+    -- Dragon hover
+    solitaire.dragon_hover = nil
+    for i = 1, 3 do
+        local bx, by = solitaire.dragon_button_position(i)
+        local d = math.sqrt((x - bx) ^ 2 + (y - by) ^ 2)
+        if d < BUTTON_RADIUS then
+            solitaire.dragon_hover = i
+        end
     end
 end
 
 function solitaire.mousepressed(x, y, button, istouch, presses)
     if solitaire.animation == nil then
-        local bc = solitaire.check_click(x, y)
+        local bc = solitaire.cards_at_location(x, y)
         if bc == nil then return end
 
-        solitaire.pick_up_cards_from_board(bc[1], bc[2])
-        local locx, locy = solitaire.board_position(bc[1], bc[2])
+        solitaire.pick_up_cards_from_board(bc)
+        local locx, locy = solitaire.card_position(bc)
         solitaire.offset = {
             locx - x,
             locy - y
@@ -193,7 +208,14 @@ function solitaire.draw()
     for i, col in ipairs(solitaire.board) do
         for j, cd in ipairs(col) do
             local cx, cy = solitaire.board_position(i, j)
-            local h = solitaire.hover ~= nil and i == solitaire.hover[1] and j >= solitaire.hover[2]
+            local h = false
+            if solitaire.hover ~= nil and solitaire.hover[1] == LOC_BOARD and
+                solitaire.hover[2][1] == i and solitaire.hover[2][2] == j then
+                h = true
+            end
+            if solitaire.dragon_hover ~= nil and cd[2] == 0 and cd[1] == solitaire.dragon_hover then
+                h = true
+            end
             solitaire.draw_card(cx, cy, cd, h)
         end
     end
@@ -202,7 +224,16 @@ function solitaire.draw()
     for i = 1, 3 do
         local fx, fy = solitaire.free_cell_position(i)
         local cl = solitaire.free_cells[i]
-        solitaire.draw_card(fx, fy, cl, false)
+        local h = false
+        if solitaire.hover ~= nil and solitaire.hover[1] == LOC_FREE_CELL and
+            solitaire.hover[2] == i then
+            h = true
+        end
+        if solitaire.dragon_hover ~= nil and cl ~= nil
+            and cl[2] == 0 and cl[1] == solitaire.dragon_hover then
+            h = true
+        end
+        solitaire.draw_card(fx, fy, cl, h)
     end
 
     -- Foundations
@@ -219,6 +250,10 @@ function solitaire.draw()
     -- Dragon buttons
     for i = 1, 3 do
         local bx, by = solitaire.dragon_button_position(i)
+        if solitaire.movable_dragons[i] ~= nil then
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.circle("fill", bx, by, BUTTON_RADIUS)
+        end
         love.graphics.setColor(COLORS[i])
         love.graphics.circle("line", bx, by, BUTTON_RADIUS)
     end
@@ -312,7 +347,7 @@ function solitaire.legal_stack(col, row)
     return true
 end
 
-function solitaire.check_click(x, y)
+function solitaire.cards_at_location(x, y)
     for i, col in ipairs(solitaire.board) do
         for j = 1, #col do
             local px, py = solitaire.board_position(i, j)
@@ -325,7 +360,7 @@ function solitaire.check_click(x, y)
                 a[4] = CARD_HEIGHT
             end
             if aabb.contains(a, { x, y }) then
-                return { i, j }
+                return { LOC_BOARD, { i, j } }
             end
         end
     end
@@ -367,12 +402,15 @@ function solitaire.card_position(p)
     end
 end
 
-function solitaire.pick_up_cards_from_board(col, row)
-    local new_stack = tableext.unpack(solitaire.board[col], row)
-    solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row - 1)
+function solitaire.pick_up_cards_from_board(pos)
+    if pos[1] == LOC_BOARD then
+        local col, row = pos[2][1], pos[2][2]
+        local new_stack = tableext.unpack(solitaire.board[col], row)
+        solitaire.board[col] = tableext.unpack(solitaire.board[col], 1, row - 1)
 
-    solitaire.stack = new_stack
-    solitaire.old_column = col
+        solitaire.stack = new_stack
+        solitaire.old_column = col
+    end
 end
 
 function solitaire.undo_pickup()
@@ -454,6 +492,49 @@ function solitaire.after_move()
             anim.endX, anim.endY = solitaire.foundation_position(anim.card[1])
         end
         solitaire.animation = anim
+
+        return
+    end
+
+    -- Check position of all dragons in free cells and top of board
+    solitaire.dragons = { {}, {}, {} }
+    solitaire.movable_dragons = { nil, nil, nil }
+
+    local open_free_cell = nil
+
+    for i = 1, 3 do
+        if solitaire.free_cells[i] ~= nil then
+            if solitaire.free_cells[i][2] == 0 then
+                table.insert(solitaire.dragons[solitaire.free_cells[i][1]], { LOC_FREE_CELL, i })
+            end
+        elseif open_free_cell == nil then
+            open_free_cell = i
+        end
+    end
+
+    for i, col in ipairs(solitaire.board) do
+        if next(col) ~= nil then
+            local top_card = col[#col]
+            if top_card[2] == 0 then
+                table.insert(solitaire.dragons[top_card[1]], { LOC_BOARD, { i, #col } })
+            end
+        end
+    end
+
+    for i = 1, 3 do
+        -- All 4 dragons have to be exposed
+        if #solitaire.dragons[i] == 4 then
+            for j, dgp in ipairs(solitaire.dragons[i]) do
+                -- If one of the dragons is in a free cell, move all dragons to that free cell
+                if dgp[1] == LOC_FREE_CELL and solitaire.movable_dragons[i] == nil then
+                    solitaire.movable_dragons[i] = dgp[2]
+                end
+            end
+            -- If there is an open free cell, you can move all dragons to that cell
+            if open_free_cell ~= nil and solitaire.movable_dragons[i] == nil then
+                solitaire.movable_dragons[i] = open_free_cell
+            end
+        end
     end
 end
 
