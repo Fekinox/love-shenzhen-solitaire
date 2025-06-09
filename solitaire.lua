@@ -7,10 +7,10 @@ local solitaire = {}
 -- first value is color, R, G, B, or F
 -- second value is value. 0 is dragon, 1-9 are numbers
 
-COLOR_RED = { 1, 0, 0 }
-COLOR_GREEN = { 0, 1, 0 }
-COLOR_BLACK = { 0, 0, 1 }
-COLOR_FLOWER = { 0.5, 0.5, 0 }
+COLOR_RED = { love.math.colorFromBytes(255, 0, 0) }
+COLOR_GREEN = { love.math.colorFromBytes(0, 255, 106) }
+COLOR_BLACK = { love.math.colorFromBytes(0, 114, 255) }
+COLOR_FLOWER = { love.math.colorFromBytes(255, 199, 0) }
 COLORS = { COLOR_RED, COLOR_GREEN, COLOR_BLACK, COLOR_FLOWER }
 CHARACTERS = { '中', '發', '白', '🌷' }
 
