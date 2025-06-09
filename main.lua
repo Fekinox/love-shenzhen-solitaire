@@ -1,6 +1,8 @@
 local solitaire = require("solitaire")
 
 function love.load()
+    local f = love.graphics.newFont("assets/font.otf")
+    love.graphics.setFont(f)
     solitaire.start_game()
 end
 

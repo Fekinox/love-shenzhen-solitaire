@@ -12,6 +12,7 @@ COLOR_GREEN = { 0, 1, 0 }
 COLOR_BLACK = { 0, 0, 1 }
 COLOR_FLOWER = { 0.5, 0.5, 0 }
 COLORS = { COLOR_RED, COLOR_GREEN, COLOR_BLACK, COLOR_FLOWER }
+CHARACTERS = { '中', '發', '白', '🌷' }
 
 CARD_WIDTH = 40
 CARD_HEIGHT = 60
@@ -328,7 +329,11 @@ function solitaire.draw_card(x, y, cd, h)
     love.graphics.rectangle("fill", x, y, CARD_WIDTH, CARD_HEIGHT)
     love.graphics.setColor(COLORS[cd[1]])
     love.graphics.rectangle("line", x, y, CARD_WIDTH, CARD_HEIGHT)
-    love.graphics.print(cd[2], x, y)
+    if cd[2] > 0 then
+        love.graphics.print(cd[2], x, y)
+    else
+        love.graphics.print(CHARACTERS[cd[1]], x, y)
+    end
 end
 
 function solitaire.legal_move(stack, column)
